@@ -1,7 +1,7 @@
 // Costruisce: artifact.html (anteprima su Claude, dati simulati) e dist/ (web app per iPhone, dati reali)
 const fs=require('fs');let s=fs.readFileSync('app.html','utf8');
 const css=fs.readFileSync('node_modules/leaflet/dist/leaflet.css','utf8').replace(/\/\*[\s\S]*?\*\//g,'').replace(/\s+/g,' ');
-s=s.replace('/*LEAFLETCSS*/',()=>css).replace('/*COAST*/',()=>fs.readFileSync('coast.json','utf8'));
+s=s.replace('/*LEAFLETCSS*/',()=>css).replace('/*COAST*/',()=>fs.readFileSync('coast.json','utf8')).replace('/*COAST_HI*/',()=>fs.readFileSync('detail.json','utf8'));
 fs.writeFileSync('artifact.html',s.replace('/*PREVIEW*/true','true'));
 const head=`<!doctype html>
 <html lang="it"><head><meta charset="utf-8">

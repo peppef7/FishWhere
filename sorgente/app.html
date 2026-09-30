@@ -198,6 +198,7 @@ details p,details li{color:var(--muted)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const COAST=/*COAST*/;
+const COAST_HI=/*COAST_HI*/;
 </script>
 <script>
 "use strict";
@@ -255,9 +256,12 @@ function dayEvents(t0,lat,lon){ // t0 = mezzanotte locale (s)
 }
 
 /* ---------- costa: terra/mare ed esposizione ---------- */
-const LAND=COAST.map(r=>{let a=1e9,b=1e9,c=-1e9,d=-1e9;for(const [x,y] of r){if(x<a)a=x;if(y<b)b=y;if(x>c)c=x;if(y>d)d=y;}return {r,bb:[a,b,c,d]};});
-function onLand(lat,lon){let inside=false;
-  for(const p of LAND){if(lon<p.bb[0]||lon>p.bb[2]||lat<p.bb[1]||lat>p.bb[3])continue;const r=p.r;let c=false;
+const bbox=r=>{let a=1e9,b=1e9,c=-1e9,d=-1e9;for(const [x,y] of r){if(x<a)a=x;if(y<b)b=y;if(x>c)c=x;if(y>d)d=y;}return {r,bb:[a,b,c,d]};};
+const LAND=COAST.map(bbox), LAND_HI=COAST_HI.map(bbox);
+// Costa ad alta risoluzione (OpenStreetMap, ~10 m) solo nelle zone preferite: dentro questi riquadri si usa quella
+const HI_BOXES=[[16.9,40.75,17.6,41.2],[19.2,39.7,19.65,40.0]];
+function onLand(lat,lon){const hi=HI_BOXES.some(B=>lon>=B[0]&&lon<=B[2]&&lat>=B[1]&&lat<=B[3]);let inside=false;
+  for(const p of hi?LAND_HI:LAND){if(lon<p.bb[0]||lon>p.bb[2]||lat<p.bb[1]||lat>p.bb[3])continue;const r=p.r;let c=false;
     for(let i=0,j=r.length-1;i<r.length;j=i++){const [xi,yi]=r[i],[xj,yj]=r[j];if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/(yj-yi)+xi))c=!c;}
     if(c)inside=!inside;}
   return inside;}
@@ -384,19 +388,14 @@ const band=s=>s>=80?["Ottimo","var(--good)"]:s>=65?["Buono","var(--ok)"]:s>=50?[
 
 /* ---------- stato e interfaccia ---------- */
 const PRESETS=[
- {name:"Isola del Giglio, Campese",lat:42.3500,lon:10.8693},
- {name:"Monte Argentario",lat:42.4020,lon:11.0880},
- {name:"Elba, Capo Calamita",lat:42.7125,lon:10.3990},
- {name:"Capo Palinuro",lat:40.0265,lon:15.2790},
- {name:"Capo Testa",lat:41.2400,lon:9.1300},
- {name:"Costa Viola, Scilla",lat:38.2636,lon:15.7113},
- {name:"Capo Zafferano",lat:38.1130,lon:13.5460},
- {name:"Polignano a Mare",lat:41.0081,lon:17.2315}
+ {name:"Polignano a Mare",lat:41.0012,lon:17.2229},
+ {name:"Monopoli",lat:40.9486,lon:17.3114},
+ {name:"Othonoi",lat:39.8368,lon:19.4057}
 ];
 const S={spot:null,rows:[],days:null,sel:0,mode:null,cache:new Map(),marker:null};
 let map;
 function initMap(){
-  map=L.map("map",{zoomControl:true,attributionControl:true}).setView([41.3,12.6],6);
+  map=L.map("map",{zoomControl:true,attributionControl:true}).setView([40.45,18.3],8);
   // Base vettoriale sotto le tile satellitari: si vede solo se il satellite non carica (offline o anteprima)
   map.createPane("coast").style.zIndex=150;
   L.geoJSON({type:"Feature",geometry:{type:"MultiPolygon",coordinates:COAST.map(r=>[r])}},{pane:"coast",interactive:false,style:{color:getComputedStyle(document.documentElement).getPropertyValue("--land-line").trim()||"#8d9a8f",weight:1,fillColor:getComputedStyle(document.documentElement).getPropertyValue("--land").trim()||"#e9e4d6",fillOpacity:1}}).addTo(map);
