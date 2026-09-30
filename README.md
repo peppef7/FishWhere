@@ -4,6 +4,7 @@ Web app per iPhone che ti dice dove e quando andare a pescare in apnea. Scegli u
 
 ## Cosa fa
 - **Mappa satellitare** (Esri World Imagery) con le zone preferite (Polignano a Mare, Monopoli, Othonoi), il tasto **La mia posizione** o un tocco su qualsiasi punto della costa.
+- **Voti sulla costa vicina**: numeretti colorati sui tratti di costa intorno allo spot (o alla tua posizione) con il voto per il giorno e l'ora scelti; toccane uno per il dettaglio.
 - **Griglia 7 giorni × ore di luce** colorata dal voto e le **3 finestre migliori**.
 - **Perché quel voto**: mare, visibilità, specie, vento, luce, periodi solunari, marea e pressione, ognuno con il suo contributo.
 - **Condizioni**: temperatura dell'acqua (con la muta consigliata), onda e periodo, vento con il nome locale (Maestrale, Libeccio…), visibilità stimata, alba e tramonto.

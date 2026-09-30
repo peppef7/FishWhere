@@ -99,6 +99,10 @@ details summary{cursor:pointer;font-weight:600}
 details p,details li{color:var(--muted)}
 .foot{font-size:11.5px;color:var(--muted)}
 .leaflet-container{font-family:var(--f-body);background:var(--sea)}
+.map-hint .tbtn{font:600 16px/1 var(--f-body);width:28px;height:26px;border-radius:6px;border:1px solid var(--line);background:var(--soft);color:var(--ink);cursor:pointer}
+.map-hint{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.tlabel{font-family:var(--f-data);font-size:12.5px}.tsub{color:var(--muted);font-size:11.5px}
+.score-pin{font:600 11px/18px var(--f-data);min-width:28px;height:18px;padding:0 4px;border-radius:9px;color:#08161d;text-align:center;border:1.5px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer;font-variant-numeric:tabular-nums}
+.score-pin.night{background:var(--night);color:var(--ink)}
 .spot-marker{width:22px;height:22px;border-radius:50%;background:var(--buoy);border:3px solid #fff;box-shadow:0 0 0 2px var(--buoy),0 2px 8px rgba(0,0,0,.35)}
 .loading{opacity:.55;transition:opacity .2s}
 @media (max-width:820px){
@@ -301,17 +305,22 @@ function speciesFit(sp,month,sst,hw,twilight){
 const HOURLY_F="temperature_2m,precipitation,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m";
 const HOURLY_M="wave_height,wave_direction,wave_period,swell_wave_height,sea_surface_temperature,sea_level_height_msl,ocean_current_velocity";
 async function getJSON(u){const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),9000);try{const r=await fetch(u,{signal:ctl.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}finally{clearTimeout(to);}}
-async function loadLive(lat,lon,seaLat,seaLon){
+// Open-Meteo accetta più coordinate in una sola richiesta: una chiamata meteo e una marina per tutti i punti
+async function loadLiveMulti(pts){
   const common=`&past_days=2&forecast_days=7&timezone=${encodeURIComponent(TZ)}&timeformat=unixtime`;
-  const [f,m]=await Promise.all([
-    getJSON(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&hourly=${HOURLY_F}&wind_speed_unit=kmh${common}`),
-    getJSON(`https://marine-api.open-meteo.com/v1/marine?latitude=${seaLat.toFixed(4)}&longitude=${seaLon.toFixed(4)}&hourly=${HOURLY_M}${common}`).catch(()=>getJSON(`https://marine-api.open-meteo.com/v1/marine?latitude=${seaLat.toFixed(4)}&longitude=${seaLon.toFixed(4)}&hourly=wave_height,wave_direction,wave_period,sea_surface_temperature${common}`))]);
-  const mi=new Map(m.hourly.time.map((t,i)=>[t,i]));
-  const H=f.hourly; const rows=H.time.map((t,i)=>{const j=mi.get(t);const g=k=>j==null?null:m.hourly[k]?.[j]??null;
-    return {t,temp:H.temperature_2m[i],rain:H.precipitation[i]??0,cloud:H.cloud_cover[i]??0,p:H.pressure_msl[i],ws:H.wind_speed_10m[i]??0,wd:H.wind_direction_10m[i]??0,wg:H.wind_gusts_10m[i]??0,
-      hs:g("wave_height"),wdir:g("wave_direction"),wper:g("wave_period"),swell:g("swell_wave_height"),sst:g("sea_surface_temperature"),tide:g("sea_level_height_msl"),cur:g("ocean_current_velocity")};});
-  if(!rows.some(r=>r.hs!=null))throw new Error("nessun dato marino");
-  return rows;}
+  const ll=(k1,k2)=>`latitude=${pts.map(p=>p[k1].toFixed(4)).join(",")}&longitude=${pts.map(p=>p[k2].toFixed(4)).join(",")}`;
+  const arr=x=>Array.isArray(x)?x:[x];
+  const [fs,ms]=await Promise.all([
+    getJSON(`https://api.open-meteo.com/v1/forecast?${ll("lat","lon")}&hourly=${HOURLY_F}&wind_speed_unit=kmh${common}`),
+    getJSON(`https://marine-api.open-meteo.com/v1/marine?${ll("sLat","sLon")}&hourly=${HOURLY_M}${common}`).catch(()=>getJSON(`https://marine-api.open-meteo.com/v1/marine?${ll("sLat","sLon")}&hourly=wave_height,wave_direction,wave_period,sea_surface_temperature${common}`))]);
+  const F=arr(fs),M=arr(ms);
+  return pts.map((_,k)=>{const f=F[k],m=M[k];if(!f||!m)return null;
+    const mi=new Map(m.hourly.time.map((t,i)=>[t,i]));
+    const H=f.hourly; const rows=H.time.map((t,i)=>{const j=mi.get(t);const g=q=>j==null?null:m.hourly[q]?.[j]??null;
+      return {t,temp:H.temperature_2m[i],rain:H.precipitation[i]??0,cloud:H.cloud_cover[i]??0,p:H.pressure_msl[i],ws:H.wind_speed_10m[i]??0,wd:H.wind_direction_10m[i]??0,wg:H.wind_gusts_10m[i]??0,
+        hs:g("wave_height"),wdir:g("wave_direction"),wper:g("wave_period"),swell:g("swell_wave_height"),sst:g("sea_surface_temperature"),tide:g("sea_level_height_msl"),cur:g("ocean_current_velocity")};});
+    return rows.some(r=>r.hs!=null)?rows:null;});}
+async function loadLive(lat,lon,sLat,sLon){const [rows]=await loadLiveMulti([{lat,lon,sLat,sLon}]);if(!rows)throw new Error("nessun dato marino");return rows;}
 function loadSim(lat,lon){
   // Generatore deterministico e plausibile: sistemi sinottici, brezza, onda derivata dal vento, SST climatologica, marea dalla luna.
   const seed=hash(lat.toFixed(1)+","+lon.toFixed(1)), P=k=>hash(seed+"/"+k)*2*Math.PI;
@@ -417,7 +426,7 @@ function locateMe(e){const b=e.currentTarget;b.textContent="Cerco la posizione�
     if(meMarker)meMarker.setLatLng([lat,lon]);else meMarker=L.circleMarker([lat,lon],{radius:7,color:"#fff",weight:2,fillColor:"#2f7cf6",fillOpacity:1}).addTo(map);
     const c=nearestSea(lat,lon);
     if(!c){map.setView([lat,lon],10);$("hint").textContent="Sei lontano dal mare: tocca un tratto di costa sulla mappa.";return;}
-    const km=c.km;map.fitBounds(L.latLngBounds([[lat,lon],c.p]).pad(0.3),{maxZoom:14});
+    const km=c.km;S.me=[lat,lon];map.setView(c.p,12,{animate:false});
     selectSpot({name:km<1?"Qui vicino a te":`Costa più vicina a te (${km.toFixed(km<10?1:0)} km)`,lat:c.p[0],lon:c.p[1]});},
   err=>{done();const m=err.code===1?"Posizione negata: su iPhone vai in Impostazioni › Privacy › Localizzazione › Siti web di Safari e scegli «Mentre usi l'app».":"Posizione non disponibile in questo momento: riprova all'aperto o tocca la costa sulla mappa.";
     $("hint").textContent=m;showNotices([["warn",m]]);},{enableHighAccuracy:true,timeout:15000,maximumAge:60000});}
@@ -438,7 +447,7 @@ async function selectSpot(p){
   try{localStorage.setItem("dp-last",JSON.stringify({name:p.name,lat:p.lat,lon:p.lon}));}catch(e){}
   document.querySelectorAll("#spots button").forEach(b=>b.setAttribute("aria-pressed",String(b.title===p.name)));
   if(S.marker)S.marker.setLatLng([lat,lon]);else S.marker=L.marker([lat,lon],{icon:L.divIcon({className:"",html:'<div class="spot-marker"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(map);
-  $("hint").textContent="Scegli un'ora nella griglia per vedere il dettaglio.";
+  $("hint").textContent="I numeri sulla costa sono i voti dei punti vicini per l'ora scelta: toccane uno.";
   $("panel").classList.add("loading");
   $("spotName").textContent=spot.name;
   $("spotCoords").textContent=`${lat.toFixed(4)}° N  ${lon.toFixed(4)}° E`;
@@ -457,10 +466,49 @@ async function selectSpot(p){
   S.rows=copy.filter(r=>r.t>=now-3600);
   // ora iniziale: la migliore di oggi se esiste, altrimenti la prossima
   const today=S.rows.filter(r=>r.L.key===S.rows[0].L.key&&!r.night);
-  const pick=today.length?today.reduce((a,b)=>b.score>a.score?b:a):S.rows.find(r=>!r.night)||S.rows[0];
+  const keep=p.keepT&&S.rows.find(r=>r.t===p.keepT);
+  const pick=keep||(today.length?today.reduce((a,b)=>b.score>a.score?b:a):S.rows.find(r=>!r.night)||S.rows[0]);
   S.sel=S.rows.indexOf(pick);
   showNotices(notes);renderAll();$("panel").classList.remove("loading");
+  if(p.keepT)drawNearby();else updateNearby(spot);
 }
+/* ---------- voti sulla costa vicina ---------- */
+const NEAR={center:null,pts:[],layer:null,busy:false};
+function coastPoints(lat,lon,R=12,max=12,spacing=2){
+  // griglia di punti in mare a meno di ~700 m da terra, poi ne teniamo pochi e ben distanziati, dal più vicino
+  const cand=[],step=1.2,kLat=1/111,kLon=1/(111*Math.cos(lat*rad));
+  for(let dy=-R;dy<=R;dy+=step)for(let dx=-R;dx<=R;dx+=step){const d=Math.hypot(dx,dy);if(d>R)continue;
+    const a=lat+dy*kLat,b=lon+dx*kLon;if(onLand(a,b))continue;
+    let near=false;for(let q=0;q<360&&!near;q+=45){const p=dest(a,b,q,0.7);if(onLand(p[0],p[1]))near=true;}
+    if(near)cand.push({lat:a,lon:b,d});}
+  cand.sort((x,y)=>x.d-y.d);const out=[];
+  for(const c of cand){if(c.d<1.5)continue;if(out.every(o=>Math.hypot((o.lat-c.lat)/kLat,(o.lon-c.lon)/kLon)>=spacing))out.push(c);if(out.length>=max)break;}
+  return out;}
+async function updateNearby(spot){
+  if(NEAR.center&&Math.hypot(NEAR.center.lat-spot.lat,(NEAR.center.lon-spot.lon)*0.77)<0.02){fitNearby(spot);drawNearby();return;}
+  NEAR.center={lat:spot.lat,lon:spot.lon};const my=NEAR.center;
+  const pts=coastPoints(spot.lat,spot.lon).map(p=>{const ex=exposure(p.lat,p.lon);const [sLat,sLon]=dest(p.lat,p.lon,ex.facing,1.5);return {...p,ex,sLat,sLon};});
+  if(!pts.length){NEAR.pts=[];drawNearby();return;}
+  let data;
+  try{data=await loadLiveMulti(pts);}catch(e){data=PREVIEW?pts.map(p=>{const r=loadSim(p.lat,p.lon);r.mode="sim";return r;}):null;}
+  if(NEAR.center!==my)return;
+  if(!data){NEAR.pts=[];drawNearby();return;}
+  NEAR.pts=pts.map((p,i)=>{const rows=data[i];if(!rows)return null;rows.mode=rows.mode||"live";
+    S.cache.set(p.lat.toFixed(3)+","+p.lon.toFixed(3),rows);
+    const copy=rows.map(r=>({...r}));scoreAll(copy,p);return {...p,byT:new Map(copy.map(r=>[r.t,r]))};}).filter(Boolean);
+  fitNearby(spot);
+  if(S.rows.length)renderSel();else drawNearby();}
+function fitNearby(spot){const pts=NEAR.pts.map(q=>[q.lat,q.lon]).concat([[spot.lat,spot.lon]]);if(S.me&&Math.hypot(S.me[0]-spot.lat,S.me[1]-spot.lon)<0.2)pts.push(S.me);
+  if(pts.length>1)map.fitBounds(L.latLngBounds(pts).pad(0.12),{maxZoom:14,animate:false});}
+function drawNearby(){if(!map)return;
+  if(!NEAR.layer)NEAR.layer=L.layerGroup().addTo(map);NEAR.layer.clearLayers();
+  const cur=S.rows[S.sel];if(!cur)return;
+  for(const p of NEAR.pts){const r=p.byT.get(cur.t);if(!r)continue;const [bn,c]=band(r.score);
+    const html=r.night?'<div class="score-pin night">·</div>':`<div class="score-pin" style="background:${c}">${r.score}</div>`;
+    const m=L.marker([p.lat,p.lon],{icon:L.divIcon({className:"",html,iconSize:[28,18],iconAnchor:[14,9]}),title:`${r.score}/100 ${bn} · a ${p.d.toFixed(1)} km`,keyboard:true,zIndexOffset:-100});
+    m.on("click",()=>selectSpot({name:`Costa vicina (${dirName(bearing(NEAR.center,p))}, ${p.d.toFixed(1)} km)`,lat:p.lat,lon:p.lon,keepT:cur.t}));
+    NEAR.layer.addLayer(m);}}
+function bearing(a,b){const y=Math.sin((b.lon-a.lon)*rad)*Math.cos(b.lat*rad),x=Math.cos(a.lat*rad)*Math.sin(b.lat*rad)-Math.sin(a.lat*rad)*Math.cos(b.lat*rad)*Math.cos((b.lon-a.lon)*rad);return (Math.atan2(y,x)*deg+360)%360;}
 function setMode(m){const el=$("mode");el.className="pill "+(m==="live"?"live":"sim");el.textContent=m==="live"?"dati in diretta":"dati simulati";}
 function showNotices(n){$("notices").innerHTML=n.map(([c,t])=>`<div class="notice ${c}">${t}</div>`).join("");}
 function renderAll(){renderHeat();renderSel();renderBest();}
@@ -482,6 +530,10 @@ function dial(score,night){const [bn,c]=band(score);const a=clamp(score/100),R=4
   <text x="56" y="82" text-anchor="middle" font-size="10" fill="var(--muted)" font-family="JetBrains Mono,monospace">/100</text>`;}
 function renderSel(){
   const r=S.rows[S.sel];if(!r)return;const d=r.day;
+  drawNearby();
+  const tl=new Date(r.t*1000).toLocaleDateString("it-IT",{timeZone:TZ,weekday:"short",day:"numeric"})+" · ore "+String(r.L.h).padStart(2,"0");
+  $("hint").innerHTML=`<button type="button" class="tbtn" id="hp" aria-label="Ora precedente">‹</button><b class="tlabel">${tl}</b><button type="button" class="tbtn" id="hn" aria-label="Ora successiva">›</button><span class="tsub">${NEAR.pts.length?"voti della costa vicina":""}</span>`;
+  $("hp").onclick=()=>$("prevH").click();$("hn").onclick=()=>$("nextH").click();
   $("dial").innerHTML=dial(r.score,r.night);
   const [bn]=band(r.score);
   $("verdict").textContent=r.night?"Notte":bn;
