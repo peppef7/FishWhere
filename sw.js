@@ -1,5 +1,5 @@
 // Service worker: l'app si apre anche senza rete e mostra le ultime previsioni scaricate per ogni spot.
-const VERSION = 'dp-1.0.0';
+const VERSION = 'dp-1.0.1';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'];
 const TILES = 'dp-tiles', MAX_TILES = 600;

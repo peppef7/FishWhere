@@ -18,6 +18,6 @@ const head=`<!doctype html>
 <style>html{box-sizing:border-box}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);background:#0e2a3b}body{margin:0}</style>
 </head><body>
 `;
-fs.mkdirSync('dist',{recursive:true});
+fs.mkdirSync('dist',{recursive:true});// in un clone del repository basta scrivere index.html nella radice
 fs.writeFileSync('dist/index.html',head+s.replace('/*PREVIEW*/true','false')+'\n</body></html>\n');
 console.log('ok',s.length);

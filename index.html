@@ -54,7 +54,7 @@ header.bar{grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:w
 .pill.sim{border-color:#efbb3f;color:#ffd77a}
 #mapwrap{position:relative;min-height:0}
 #map{position:absolute;inset:0;background:var(--sea)}
-.map-hint{position:absolute;left:12px;bottom:12px;z-index:500;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12.5px;max-width:calc(100% - 24px)}
+.map-hint{position:absolute;left:12px;bottom:30px;z-index:500;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12.5px;max-width:calc(100% - 24px)}
 .spots{position:absolute;left:56px;right:12px;top:12px;z-index:500;display:flex;flex-wrap:wrap;gap:6px}
 .spots button{font:600 12.5px var(--f-body);padding:5px 9px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
 .spots button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -411,22 +411,40 @@ const S={spot:null,rows:[],days:null,sel:0,mode:null,cache:new Map(),marker:null
 let map;
 function initMap(){
   map=L.map("map",{zoomControl:true,attributionControl:true}).setView([41.3,12.6],6);
-  // Base vettoriale sempre presente (funziona anche offline)
-  L.geoJSON({type:"Feature",geometry:{type:"MultiPolygon",coordinates:COAST.map(r=>[r])}},{interactive:false,style:{color:getComputedStyle(document.documentElement).getPropertyValue("--land-line").trim()||"#8d9a8f",weight:1,fillColor:getComputedStyle(document.documentElement).getPropertyValue("--land").trim()||"#e9e4d6",fillOpacity:1}}).addTo(map);
-  const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Satellite &copy; Esri, Maxar, Earthstar Geographics"});
+  // Base vettoriale sotto le tile satellitari: si vede solo se il satellite non carica (offline o anteprima)
+  map.createPane("coast").style.zIndex=150;
+  L.geoJSON({type:"Feature",geometry:{type:"MultiPolygon",coordinates:COAST.map(r=>[r])}},{pane:"coast",interactive:false,style:{color:getComputedStyle(document.documentElement).getPropertyValue("--land-line").trim()||"#8d9a8f",weight:1,fillColor:getComputedStyle(document.documentElement).getPropertyValue("--land").trim()||"#e9e4d6",fillOpacity:1}}).addTo(map);
+  const sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"&copy; Esri, Maxar"});
   const lbl=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,opacity:.9});
   let ok=false; sat.on("tileload",()=>{if(!ok){ok=true;const el=$("tilesmode");el.hidden=false;el.textContent="satellite";}});
   sat.addTo(map);lbl.addTo(map);
   setTimeout(()=>{if(!ok){map.removeLayer(sat);map.removeLayer(lbl);const el=$("tilesmode");el.hidden=false;el.textContent="mappa vettoriale";el.title="Le immagini satellitari non sono raggiungibili da questa pagina";}},6000);
+  map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
   map.attributionControl.addAttribution("Costa &copy; Natural Earth");
   map.on("click",e=>selectSpot({name:null,lat:e.latlng.lat,lon:e.latlng.lng}));
 }
 function renderPresets(){const box=$("spots");box.innerHTML="";PRESETS.forEach((p,i)=>{const b=document.createElement("button");b.type="button";b.textContent=p.name.split(",")[0];b.title=p.name;b.setAttribute("aria-pressed","false");b.onclick=()=>{selectSpot(p);map.setView([p.lat,p.lon],13);};box.appendChild(b);});
-  if(!PREVIEW&&"geolocation" in navigator){const b=document.createElement("button");b.type="button";b.textContent="La mia posizione";b.onclick=()=>navigator.geolocation.getCurrentPosition(p=>{const q={name:null,lat:p.coords.latitude,lon:p.coords.longitude};map.setView([q.lat,q.lon],13);selectSpot(q);},()=>showNotices([["warn","Posizione non disponibile: consenti l'accesso alla posizione a Safari nelle impostazioni."]]),{enableHighAccuracy:true,timeout:10000});box.prepend(b);}}
+  if(!PREVIEW&&"geolocation" in navigator){const b=document.createElement("button");b.type="button";b.textContent="La mia posizione";b.onclick=locateMe;box.prepend(b);}}
+let meMarker=null;
+function locateMe(e){const b=e.currentTarget;b.textContent="Cerco la posizione…";b.disabled=true;
+  const done=()=>{b.textContent="La mia posizione";b.disabled=false;};
+  navigator.geolocation.getCurrentPosition(p=>{done();const lat=p.coords.latitude,lon=p.coords.longitude;
+    if(meMarker)meMarker.setLatLng([lat,lon]);else meMarker=L.circleMarker([lat,lon],{radius:7,color:"#fff",weight:2,fillColor:"#2f7cf6",fillOpacity:1}).addTo(map);
+    const c=nearestSea(lat,lon);
+    if(!c){map.setView([lat,lon],10);$("hint").textContent="Sei lontano dal mare: tocca un tratto di costa sulla mappa.";return;}
+    const km=c.km;map.fitBounds(L.latLngBounds([[lat,lon],c.p]).pad(0.3),{maxZoom:14});
+    selectSpot({name:km<1?"Qui vicino a te":`Costa più vicina a te (${km.toFixed(km<10?1:0)} km)`,lat:c.p[0],lon:c.p[1]});},
+  err=>{done();const m=err.code===1?"Posizione negata: su iPhone vai in Impostazioni › Privacy › Localizzazione › Siti web di Safari e scegli «Mentre usi l'app».":"Posizione non disponibile in questo momento: riprova all'aperto o tocca la costa sulla mappa.";
+    $("hint").textContent=m;showNotices([["warn",m]]);},{enableHighAccuracy:true,timeout:15000,maximumAge:60000});}
+function nearestSea(lat,lon){ if(!onLand(lat,lon))return {p:[lat,lon],km:0};
+  for(const km of [0.3,0.6,1,1.5,2,3,4,5,7,10,13,17,22,28,35,45,60,80,100]){let best=null;
+    for(let b=0;b<360;b+=10){const q=dest(lat,lon,b,km);if(!onLand(q[0],q[1])){best=q;break;}}
+    if(best){const q=dest(best[0],best[1],exposure(best[0],best[1]).facing,0.3);return {p:onLand(q[0],q[1])?best:q,km};}}
+  return null;}
 async function selectSpot(p){
   const notes=[]; let lat=p.lat,lon=p.lon;
   const sn=snapToSea(lat,lon);
-  if(sn===undefined){notes.push(["warn","Questo punto è nell'entroterra: tocca un tratto di costa o di mare."]);showNotices(notes);return;}
+  if(sn===undefined){const m="Questo punto è nell'entroterra: tocca un tratto di costa o di mare.";$("hint").textContent=m;notes.push(["warn",m]);showNotices(notes);return;}
   if(sn){notes.push(["","Il punto era a terra: l'ho spostato sul mare più vicino."]);[lat,lon]=sn;}
   const ex=exposure(lat,lon);
   const spot={name:p.name||`Punto ${lat.toFixed(3)}, ${lon.toFixed(3)}`,lat,lon,ex};
